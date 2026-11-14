@@ -5,7 +5,7 @@ import { Brand } from "@/components/brand";
 import { Field } from "@/components/field";
 import { SecurityFooter } from "@/components/security-footer";
 import { idempotencyKey, money } from "@/lib/format";
-import { payApi, type PublicPaymentLink } from "@/lib/api";
+import { payApi, type PaymentStart, type PublicPaymentLink } from "@/lib/api";
 
 export default function CheckoutPage({ params }: { params: Promise<{ hash: string }> }) {
   const { hash } = use(params);
@@ -17,6 +17,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ hash: strin
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
+  const [transfer, setTransfer] = useState<PaymentStart["virtualAccount"] | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -50,7 +52,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ hash: strin
         window.location.assign(checkout);
         return;
       }
-      setReference(result.reference ?? "Payment initialised");
+      // No hosted page means pay-by-transfer: the provider opened a one-time
+      // account for exactly this payment, and the transfer itself confirms it.
+      if (result.virtualAccount) {
+        setTransfer(result.virtualAccount);
+        setReference(result.paymentReference ?? result.reference ?? null);
+        return;
+      }
+      setReference(result.paymentReference ?? result.reference ?? "Payment initialised");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The payment could not be started.");
     } finally {
@@ -70,6 +79,39 @@ export default function CheckoutPage({ params }: { params: Promise<{ hash: strin
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600">×</span>
               <h1 className="mt-4 text-xl font-extrabold text-slate-950">Link unavailable</h1>
               <p className="mt-2 text-sm leading-6 text-slate-500">{error ?? "This payment link is no longer active."}</p>
+            </div>
+          ) : transfer ? (
+            <div className="py-6">
+              <p className="text-xs font-bold uppercase tracking-[.12em] text-slate-400">Pay by bank transfer</p>
+              <h1 className="mt-2 text-xl font-extrabold text-slate-950">
+                Transfer {numericAmount > 0 ? money(numericAmount, link?.currency ?? "NGN") : "the amount due"} to
+              </h1>
+              <p className="mt-1 text-sm leading-5 text-slate-500">
+                This account was created just for this payment. Send the exact amount from any Nigerian bank — your payment confirms automatically once the transfer lands.
+              </p>
+              <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4">
+                <p className="text-xs font-bold uppercase tracking-[.08em] text-blue-700">{transfer.bankName}</p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="font-mono text-3xl font-extrabold tracking-wide text-[#0735B5]">{transfer.accountNumber}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(transfer.accountNumber);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="shrink-0 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-[#0735B5] transition hover:bg-blue-100"
+                  >
+                    {copied ? "Copied ✓" : "Copy"}
+                  </button>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-slate-700">{transfer.accountName}</p>
+              </div>
+              {reference && (
+                <p className="mt-4 text-center text-xs text-slate-400">
+                  Reference: <span className="font-mono font-semibold text-slate-600">{reference}</span>
+                </p>
+              )}
             </div>
           ) : reference ? (
             <div className="py-10 text-center">
@@ -103,9 +145,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ hash: strin
               {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
               <button type="button" onClick={startPayment} disabled={!canPay} className="mt-6 h-13 w-full rounded-xl bg-[#0735B5] text-[15px] font-bold text-white transition hover:bg-[#05288D] disabled:cursor-not-allowed disabled:bg-slate-300">
-                {paying ? "Opening secure checkout…" : numericAmount > 0 ? `Pay ${money(numericAmount, link.currency)}` : "Pay now"}
+                {paying ? "Preparing your payment…" : numericAmount > 0 ? `Pay ${money(numericAmount, link.currency)}` : "Pay now"}
               </button>
-              <p className="mt-3 text-center text-xs text-slate-400">Card and bank transfer availability depends on the payment provider.</p>
+              <p className="mt-3 text-center text-xs text-slate-400">You’ll get a dedicated bank account to transfer to — payment confirms automatically.</p>
             </>
           )}
           <SecurityFooter />

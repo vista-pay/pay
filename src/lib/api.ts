@@ -51,6 +51,21 @@ export type PaymentStart = {
   checkoutUrl?: string;
   authorizationUrl?: string;
   reference?: string;
+  paymentReference?: string;
+  amount?: string;
+  currency?: string;
+  /**
+   * Pay-by-transfer coordinates. Present instead of a checkout URL when the
+   * provider collects through a one-time virtual account (Providus): the
+   * payer transfers to this account and the payment confirms itself through
+   * the bank's credit notification.
+   */
+  virtualAccount?: {
+    accountNumber: string;
+    bankName: string;
+    accountName: string;
+    expiresAt?: string;
+  };
 };
 
 export type PublicInvoice = {
